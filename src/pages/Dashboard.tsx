@@ -1,0 +1,150 @@
+import { motion } from "framer-motion";
+import { Header } from "@/components/layout/Header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Upload, FileText, Clock, TrendingUp } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+
+const Dashboard = () => {
+  const navigate = useNavigate();
+
+  const recentComparisons = [
+    {
+      id: 1,
+      title: "Q1 2025 Raw Materials",
+      date: "2 hours ago",
+      vendors: 3,
+      items: 4,
+      status: "completed",
+    },
+    {
+      id: 2,
+      title: "Industrial Components RFQ",
+      date: "Yesterday",
+      vendors: 4,
+      items: 12,
+      status: "completed",
+    },
+    {
+      id: 3,
+      title: "Steel Procurement - March",
+      date: "3 days ago",
+      vendors: 2,
+      items: 8,
+      status: "completed",
+    },
+  ];
+
+  const stats = [
+    {
+      title: "Total Comparisons",
+      value: "24",
+      icon: FileText,
+      change: "+12% from last month",
+    },
+    {
+      title: "Avg. Processing Time",
+      value: "3.2 min",
+      icon: Clock,
+      change: "-18% improvement",
+    },
+    {
+      title: "Cost Savings",
+      value: "$45.2K",
+      icon: TrendingUp,
+      change: "+23% this quarter",
+    },
+  ];
+
+  return (
+    <div className="min-h-screen">
+      <Header />
+      <main className="container mx-auto px-6 py-12">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-4xl font-bold mb-3">Dashboard</h1>
+              <p className="text-muted-foreground text-lg">
+                Welcome back! Track your procurement comparisons and insights.
+              </p>
+            </div>
+            <Button size="lg" onClick={() => navigate("/upload")}>
+              <Upload className="w-4 h-4 mr-2" />
+              New Comparison
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {stats.map((stat, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1 }}
+              >
+                <Card className="gradient-card border-border shadow-glow">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      {stat.title}
+                    </CardTitle>
+                    <stat.icon className="w-4 h-4 text-primary" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold mb-1">{stat.value}</div>
+                    <p className="text-xs text-muted-foreground">{stat.change}</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          <Card className="gradient-card border-border shadow-glow">
+            <CardHeader>
+              <CardTitle>Recent Comparisons</CardTitle>
+              <CardDescription>Your latest procurement analysis history</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {recentComparisons.map((comparison, idx) => (
+                  <motion.div
+                    key={comparison.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl border border-border hover:bg-secondary/50 transition-smooth cursor-pointer"
+                    onClick={() => navigate("/comparison")}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-primary/10 rounded-lg">
+                        <FileText className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold mb-1">{comparison.title}</h3>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span>{comparison.date}</span>
+                          <span>•</span>
+                          <span>{comparison.vendors} vendors</span>
+                          <span>•</span>
+                          <span>{comparison.items} items</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-3 py-1 bg-accent/20 text-accent rounded-full text-xs font-medium">
+                      {comparison.status}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </main>
+    </div>
+  );
+};
+
+export default Dashboard;
