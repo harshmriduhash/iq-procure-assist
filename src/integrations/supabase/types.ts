@@ -26,6 +26,7 @@ export type Database = {
           title: string
           total_value: number | null
           updated_at: string
+          user_id: string | null
           vendor_count: number
         }
         Insert: {
@@ -39,6 +40,7 @@ export type Database = {
           title: string
           total_value?: number | null
           updated_at?: string
+          user_id?: string | null
           vendor_count?: number
         }
         Update: {
@@ -52,7 +54,43 @@ export type Database = {
           title?: string
           total_value?: number | null
           updated_at?: string
+          user_id?: string | null
           vendor_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comparisons_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          updated_at?: string
         }
         Relationships: []
       }

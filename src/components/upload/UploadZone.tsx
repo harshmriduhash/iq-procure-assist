@@ -87,6 +87,13 @@ export const UploadZone = () => {
         });
       }
 
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
       // Create a comparison record
       const { data: comparison, error: dbError } = await supabase
         .from('comparisons')
@@ -96,6 +103,7 @@ export const UploadZone = () => {
           item_count: files.length,
           status: 'processing',
           files: uploadedFiles,
+          user_id: user.id,
         })
         .select()
         .single();
