@@ -3,18 +3,23 @@ import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 interface UploadedFile {
   id: string;
   name: string;
   size: number;
   type: string;
+  file: File;
 }
 
 export const UploadZone = () => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -41,6 +46,7 @@ export const UploadZone = () => {
       name: file.name,
       size: file.size,
       type: file.type,
+      file: file,
     }));
 
     setFiles((prev) => [...prev, ...newFiles]);
@@ -48,6 +54,77 @@ export const UploadZone = () => {
       title: "Files added",
       description: `${newFiles.length} file(s) ready to process`,
     });
+  };
+
+  const processFiles = async () => {
+    if (files.length === 0) return;
+
+    setIsProcessing(true);
+    
+    try {
+      const uploadedFiles = [];
+      
+      // Upload each file to Supabase storage
+      for (const file of files) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(filePath, file.file);
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          throw uploadError;
+        }
+
+        uploadedFiles.push({
+          name: file.name,
+          path: filePath,
+          size: file.size,
+          type: file.type,
+        });
+      }
+
+      // Create a comparison record
+      const { data: comparison, error: dbError } = await supabase
+        .from('comparisons')
+        .insert({
+          title: `Comparison - ${new Date().toLocaleDateString()}`,
+          vendor_count: 3,
+          item_count: files.length,
+          status: 'processing',
+          files: uploadedFiles,
+        })
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error('Database error:', dbError);
+        throw dbError;
+      }
+
+      toast({
+        title: "Files uploaded successfully!",
+        description: "Processing your documents...",
+      });
+
+      // Navigate to comparison view
+      setTimeout(() => {
+        navigate('/comparison');
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error processing files:', error);
+      toast({
+        title: "Upload failed",
+        description: "There was an error uploading your files. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,8 +212,13 @@ export const UploadZone = () => {
       </AnimatePresence>
 
       {files.length > 0 && (
-        <Button className="w-full" size="lg">
-          Process with AI
+        <Button 
+          className="w-full" 
+          size="lg" 
+          onClick={processFiles}
+          disabled={isProcessing}
+        >
+          {isProcessing ? "Processing..." : "Process with AI"}
         </Button>
       )}
     </div>
