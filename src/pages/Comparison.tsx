@@ -1,53 +1,167 @@
 import { motion } from "framer-motion";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
-import { FileText, TrendingDown, TrendingUp } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { FileText, TrendingDown, TrendingUp, Loader2 } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
-const mockData = [
-  {
-    item: "Steel Plates 10mm x 2000mm",
-    vendor1: 1250,
-    vendor2: 1180,
-    vendor3: 1350,
-  },
-  {
-    item: "Aluminum Sheets 5mm x 1500mm",
-    vendor1: 890,
-    vendor2: 920,
-    vendor3: 850,
-  },
-  {
-    item: "Copper Wire 2.5mm Gauge",
-    vendor1: 450,
-    vendor2: 430,
-    vendor3: 460,
-  },
-  {
-    item: "Brass Fittings 20mm",
-    vendor1: 320,
-    vendor2: 340,
-    vendor3: 310,
-  },
-];
+interface ComparisonItem {
+  item_name: string;
+  vendor_a_price?: number;
+  vendor_b_price?: number;
+  vendor_c_price?: number;
+  unit?: string;
+}
+
+interface ComparisonData {
+  items: ComparisonItem[];
+  vendors?: Array<{ name: string; contact?: string }>;
+}
 
 const Comparison = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(true);
+  const [comparisonData, setComparisonData] = useState<ComparisonData | null>(null);
+  const [totalValue, setTotalValue] = useState(0);
 
-  const getMinMax = (item: typeof mockData[0]) => {
-    const prices = [item.vendor1, item.vendor2, item.vendor3];
+  useEffect(() => {
+    const fetchComparison = async () => {
+      const comparisonId = searchParams.get('id');
+      
+      if (!comparisonId) {
+        // Fetch the most recent comparison
+        const { data, error } = await supabase
+          .from('comparisons')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (error || !data) {
+          console.error('Error fetching comparison:', error);
+          toast({
+            title: "No comparison found",
+            description: "Please upload vendor documents first.",
+            variant: "destructive"
+          });
+          navigate('/upload');
+          return;
+        }
+
+        if (data.comparison_data) {
+          setComparisonData(data.comparison_data as unknown as ComparisonData);
+          setTotalValue(data.total_value || 0);
+        }
+      } else {
+        // Fetch specific comparison and set up realtime subscription
+        const { data, error } = await supabase
+          .from('comparisons')
+          .select('*')
+          .eq('id', comparisonId)
+          .single();
+
+        if (error || !data) {
+          console.error('Error fetching comparison:', error);
+          return;
+        }
+
+        if (data.comparison_data) {
+          setComparisonData(data.comparison_data as unknown as ComparisonData);
+          setTotalValue(data.total_value || 0);
+        }
+
+        // Subscribe to changes
+        const channel = supabase
+          .channel(`comparison-${comparisonId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'comparisons',
+              filter: `id=eq.${comparisonId}`
+            },
+            (payload) => {
+              console.log('Comparison updated:', payload);
+              const newData = payload.new as any;
+              if (newData.comparison_data) {
+                setComparisonData(newData.comparison_data as unknown as ComparisonData);
+                setTotalValue(newData.total_value || 0);
+              }
+            }
+          )
+          .subscribe();
+
+        return () => {
+          channel.unsubscribe();
+        };
+      }
+      
+      setIsLoading(false);
+    };
+
+    fetchComparison();
+  }, [searchParams, navigate, toast]);
+
+  const getMinMax = (item: ComparisonItem) => {
+    const prices = [
+      item.vendor_a_price || 0,
+      item.vendor_b_price || 0,
+      item.vendor_c_price || 0
+    ].filter(p => p > 0);
+    
+    if (prices.length === 0) return { min: 0, max: 0 };
+    
     return {
       min: Math.min(...prices),
       max: Math.max(...prices),
     };
   };
 
-  const getCellColor = (price: number, item: typeof mockData[0]) => {
+  const getCellColor = (price: number | undefined, item: ComparisonItem) => {
+    if (!price) return "bg-muted border-border text-muted-foreground";
     const { min, max } = getMinMax(item);
-    if (price === min) return "bg-accent/20 text-accent border-accent/50";
-    if (price === max) return "bg-destructive/20 text-destructive border-destructive/50";
+    if (price === min && min > 0) return "bg-accent/20 text-accent border-accent/50";
+    if (price === max && max > 0) return "bg-destructive/20 text-destructive border-destructive/50";
     return "bg-card border-border";
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen">
+        <Header />
+        <main className="container mx-auto px-6 py-12">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!comparisonData || !comparisonData.items || comparisonData.items.length === 0) {
+    return (
+      <div className="min-h-screen">
+        <Header />
+        <main className="container mx-auto px-6 py-12">
+          <div className="text-center py-12">
+            <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+            <h2 className="text-2xl font-bold mb-2">No Data Available</h2>
+            <p className="text-muted-foreground mb-6">
+              The documents are still being processed or no pricing data was found.
+            </p>
+            <Button onClick={() => navigate('/upload')}>
+              Upload New Documents
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -76,13 +190,19 @@ const Comparison = () => {
                 <thead>
                   <tr className="border-b border-border bg-secondary/50">
                     <th className="px-6 py-4 text-left text-sm font-semibold">Item Description</th>
-                    <th className="px-6 py-4 text-center text-sm font-semibold">Vendor A</th>
-                    <th className="px-6 py-4 text-center text-sm font-semibold">Vendor B</th>
-                    <th className="px-6 py-4 text-center text-sm font-semibold">Vendor C</th>
+                    <th className="px-6 py-4 text-center text-sm font-semibold">
+                      {comparisonData.vendors?.[0]?.name || 'Vendor A'}
+                    </th>
+                    <th className="px-6 py-4 text-center text-sm font-semibold">
+                      {comparisonData.vendors?.[1]?.name || 'Vendor B'}
+                    </th>
+                    <th className="px-6 py-4 text-center text-sm font-semibold">
+                      {comparisonData.vendors?.[2]?.name || 'Vendor C'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {mockData.map((item, idx) => (
+                  {comparisonData.items.map((item, idx) => (
                     <motion.tr
                       key={idx}
                       initial={{ opacity: 0, x: -20 }}
@@ -93,23 +213,10 @@ const Comparison = () => {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <FileText className="w-4 h-4 text-primary" />
-                          <span className="font-medium">{item.item}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div
-                          className={`text-center py-2 px-4 rounded-lg border ${getCellColor(
-                            item.vendor1,
-                            item
-                          )}`}
-                        >
-                          <div className="flex items-center justify-center gap-2">
-                            ${item.vendor1.toLocaleString()}
-                            {item.vendor1 === getMinMax(item).min && (
-                              <TrendingDown className="w-4 h-4" />
-                            )}
-                            {item.vendor1 === getMinMax(item).max && (
-                              <TrendingUp className="w-4 h-4" />
+                          <div>
+                            <span className="font-medium">{item.item_name}</span>
+                            {item.unit && (
+                              <span className="text-xs text-muted-foreground ml-2">({item.unit})</span>
                             )}
                           </div>
                         </div>
@@ -117,37 +224,67 @@ const Comparison = () => {
                       <td className="px-6 py-4">
                         <div
                           className={`text-center py-2 px-4 rounded-lg border ${getCellColor(
-                            item.vendor2,
+                            item.vendor_a_price,
                             item
                           )}`}
                         >
-                          <div className="flex items-center justify-center gap-2">
-                            ${item.vendor2.toLocaleString()}
-                            {item.vendor2 === getMinMax(item).min && (
-                              <TrendingDown className="w-4 h-4" />
-                            )}
-                            {item.vendor2 === getMinMax(item).max && (
-                              <TrendingUp className="w-4 h-4" />
-                            )}
-                          </div>
+                          {item.vendor_a_price ? (
+                            <div className="flex items-center justify-center gap-2">
+                              ${item.vendor_a_price.toLocaleString()}
+                              {item.vendor_a_price === getMinMax(item).min && getMinMax(item).min > 0 && (
+                                <TrendingDown className="w-4 h-4" />
+                              )}
+                              {item.vendor_a_price === getMinMax(item).max && getMinMax(item).max > 0 && (
+                                <TrendingUp className="w-4 h-4" />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">N/A</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div
                           className={`text-center py-2 px-4 rounded-lg border ${getCellColor(
-                            item.vendor3,
+                            item.vendor_b_price,
                             item
                           )}`}
                         >
-                          <div className="flex items-center justify-center gap-2">
-                            ${item.vendor3.toLocaleString()}
-                            {item.vendor3 === getMinMax(item).min && (
-                              <TrendingDown className="w-4 h-4" />
-                            )}
-                            {item.vendor3 === getMinMax(item).max && (
-                              <TrendingUp className="w-4 h-4" />
-                            )}
-                          </div>
+                          {item.vendor_b_price ? (
+                            <div className="flex items-center justify-center gap-2">
+                              ${item.vendor_b_price.toLocaleString()}
+                              {item.vendor_b_price === getMinMax(item).min && getMinMax(item).min > 0 && (
+                                <TrendingDown className="w-4 h-4" />
+                              )}
+                              {item.vendor_b_price === getMinMax(item).max && getMinMax(item).max > 0 && (
+                                <TrendingUp className="w-4 h-4" />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">N/A</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div
+                          className={`text-center py-2 px-4 rounded-lg border ${getCellColor(
+                            item.vendor_c_price,
+                            item
+                          )}`}
+                        >
+                          {item.vendor_c_price ? (
+                            <div className="flex items-center justify-center gap-2">
+                              ${item.vendor_c_price.toLocaleString()}
+                              {item.vendor_c_price === getMinMax(item).min && getMinMax(item).min > 0 && (
+                                <TrendingDown className="w-4 h-4" />
+                              )}
+                              {item.vendor_c_price === getMinMax(item).max && getMinMax(item).max > 0 && (
+                                <TrendingUp className="w-4 h-4" />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">N/A</span>
+                          )}
                         </div>
                       </td>
                     </motion.tr>
@@ -159,8 +296,8 @@ const Comparison = () => {
             <div className="p-6 border-t border-border bg-secondary/30">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Total Estimated Value</p>
-                  <p className="text-2xl font-bold">$11,940</p>
+                  <p className="text-sm text-muted-foreground mb-1">Total Estimated Value (Best Prices)</p>
+                  <p className="text-2xl font-bold">${totalValue.toLocaleString()}</p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">

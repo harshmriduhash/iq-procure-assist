@@ -113,15 +113,31 @@ export const UploadZone = () => {
         throw dbError;
       }
 
-      toast({
-        title: "Files uploaded successfully!",
-        description: "Processing your documents...",
+      // Trigger document processing
+      const { error: processError } = await supabase.functions.invoke('process-documents', {
+        body: {
+          comparisonId: comparison.id,
+          files: uploadedFiles
+        }
       });
+
+      if (processError) {
+        console.error('Processing error:', processError);
+        toast({
+          title: "Processing started",
+          description: "Documents uploaded. Processing in background...",
+        });
+      } else {
+        toast({
+          title: "Files uploaded successfully!",
+          description: "AI is extracting vendor pricing data...",
+        });
+      }
 
       // Navigate to comparison view
       setTimeout(() => {
-        navigate('/comparison');
-      }, 1000);
+        navigate(`/comparison?id=${comparison.id}`);
+      }, 1500);
 
     } catch (error) {
       console.error('Error processing files:', error);
