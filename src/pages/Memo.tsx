@@ -3,67 +3,118 @@ import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Download, RefreshCw, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 
 const Memo = () => {
   const { toast } = useToast();
-  const [memoContent, setMemoContent] = useState(`PROCUREMENT APPROVAL MEMO
+  const [searchParams] = useSearchParams();
+  const comparisonId = searchParams.get("id");
+  const [memoContent, setMemoContent] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
-To: Procurement Director
-From: AI Analysis System
-Date: ${new Date().toLocaleDateString()}
-Subject: Vendor Comparison Analysis - Q1 2025 Materials
+  useEffect(() => {
+    if (comparisonId) {
+      loadMemo();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparisonId]);
 
-EXECUTIVE SUMMARY
-Based on comprehensive analysis of submitted vendor quotations, we recommend proceeding with Vendor B for the materials procurement contract. This recommendation is supported by competitive pricing analysis and total cost optimization.
+  const loadMemo = async () => {
+    try {
+      setIsLoading(true);
+      const { data: comparison, error } = await supabase
+        .from("comparisons")
+        .select("memo_content")
+        .eq("id", comparisonId)
+        .single();
 
-VENDOR ANALYSIS
+      if (error) throw error;
 
-Vendor A - Total Quote: $2,910
-• Steel Plates: $1,250 (18% above lowest)
-• Aluminum Sheets: $890 (5% above recommended)
-• Copper Wire: $450 (5% above lowest)
-• Brass Fittings: $320 (3% above lowest)
+      if (comparison?.memo_content) {
+        setMemoContent(comparison.memo_content);
+      } else {
+        // Generate memo if it doesn't exist
+        await generateMemo();
+      }
+    } catch (error) {
+      console.error("Error loading memo:", error);
+      toast({
+        title: "Error loading memo",
+        description: "Failed to load the memo content",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-Vendor B - Total Quote: $2,870 (RECOMMENDED)
-• Steel Plates: $1,180 (LOWEST)
-• Aluminum Sheets: $920
-• Copper Wire: $430 (LOWEST)
-• Brass Fittings: $340
+  const generateMemo = async () => {
+    try {
+      setIsRegenerating(true);
+      const { data, error } = await supabase.functions.invoke("generate-memo", {
+        body: { comparisonId },
+      });
 
-Vendor C - Total Quote: $2,970
-• Steel Plates: $1,350 (14% above lowest)
-• Aluminum Sheets: $850 (LOWEST)
-• Copper Wire: $460
-• Brass Fittings: $310 (LOWEST)
+      if (error) throw error;
 
-RECOMMENDATION
-Approve Vendor B for primary contract with estimated savings of $100 compared to alternatives. Vendor C recommended for aluminum sheets as secondary supplier for price optimization.
+      if (data?.memoContent) {
+        setMemoContent(data.memoContent);
+        toast({
+          title: "Memo generated",
+          description: "Your approval memo has been created successfully",
+        });
+      }
+    } catch (error) {
+      console.error("Error generating memo:", error);
+      toast({
+        title: "Error generating memo",
+        description: "Failed to generate the memo. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
-FINANCIAL IMPACT
-• Total Project Value: $11,940
-• Projected Savings: 3.4% vs. average quotes
-• Risk Assessment: Low - established vendor relationships
-
-NEXT STEPS
-1. Issue purchase order to Vendor B
-2. Confirm delivery schedules
-3. Update quarterly procurement metrics`);
-
-  const handleRegenerate = () => {
-    toast({
-      title: "Regenerating memo...",
-      description: "AI is creating a new version based on latest data",
-    });
+  const handleRegenerate = async () => {
+    await generateMemo();
   };
 
   const handleExport = () => {
+    const blob = new Blob([memoContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `procurement-memo-${new Date().toISOString().split("T")[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     toast({
-      title: "Exporting memo",
-      description: "Your memo has been exported to PDF",
+      title: "Memo exported",
+      description: "Your memo has been downloaded as a text file",
     });
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen">
+        <Header />
+        <main className="container mx-auto px-6 py-12">
+          <div className="flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading memo...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -89,11 +140,15 @@ NEXT STEPS
               </p>
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" onClick={handleRegenerate}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Regenerate
+              <Button 
+                variant="outline" 
+                onClick={handleRegenerate}
+                disabled={isRegenerating}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
+                {isRegenerating ? "Generating..." : "Regenerate"}
               </Button>
-              <Button onClick={handleExport}>
+              <Button onClick={handleExport} disabled={!memoContent}>
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>
